@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+build/
+dist/
+*.spec
+.vscode/
+.idea/
+*.sm4
+*_已解密.*
+*.decrypted
