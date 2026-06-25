@@ -6,6 +6,7 @@ dist/
 *.spec
 .vscode/
 .idea/
+.trae/
 *.sm4
 *_已解密.*
 *.decrypted

@@ -1,24 +1,17 @@
 # -*- coding: utf-8 -*-
-"""
-文件级加解密 (Python 版)
-对应 C 代码中的 file_crypto.c
-"""
-
 import os
 import time
 from sm4_engine import sm4_cbc_cts_encrypt, sm4_cbc_cts_decrypt
 
-MAGIC = b'SM4C'   # 文件头标识
-HEADER_SIZE = len(MAGIC) + 4 + 16   # MAGIC(4) + 原始长度(4) + IV(16) = 24 字节
+MAGIC = b'SM4C'   
+HEADER_SIZE = len(MAGIC) + 4 + 16   
 
 
 def _generate_iv() -> bytes:
-    """生成 16 字节随机 IV"""
     return os.urandom(16)
 
 
 def _bytes_to_human(n: int) -> str:
-    """把字节数转成人类可读格式"""
     for unit in ['B', 'KB', 'MB', 'GB']:
         if n < 1024:
             return f"{n:.2f} {unit}" if unit != 'B' else f"{n} {unit}"
@@ -28,10 +21,6 @@ def _bytes_to_human(n: int) -> str:
 
 def encrypt_file(in_path: str, out_path: str, key: bytes,
                   progress_callback=None) -> dict:
-    """
-    加密文件. 输出文件格式: [MAGIC | 原始长度(uint32 BE) | IV | 密文]
-    返回统计信息 dict.
-    """
     t0 = time.perf_counter()
 
     with open(in_path, 'rb') as f:
@@ -69,7 +58,6 @@ def encrypt_file(in_path: str, out_path: str, key: bytes,
 
 def decrypt_file(in_path: str, out_path: str, key: bytes,
                   progress_callback=None) -> dict:
-    """解密文件"""
     t0 = time.perf_counter()
 
     with open(in_path, 'rb') as f:

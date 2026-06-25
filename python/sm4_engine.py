@@ -1,19 +1,11 @@
 # -*- coding: utf-8 -*-
-"""
-SM4 加密算法核心 (Python 版)
-对应 C 代码中的 sm4.c
-- 单块 SM4 加密 / 解密
-- CBC 密文链接 模式
-- CTS 密文挪用 (处理非16字节对齐数据)
-"""
-
 from typing import List, Tuple
 import struct
 import os
 import time
 
 # ============================================================
-# SM4 固定参数 (与 C 版完全一致)
+# SM4 固定参数
 # ============================================================
 
 FK = [0xa3b1bac6, 0x56aa3350, 0x677d9197, 0xb27022dc]
@@ -52,22 +44,15 @@ MASK32 = 0xFFFFFFFF
 
 
 def _rotate_left(x: int, n: int) -> int:
-    """32位循环左移"""
     return ((x << n) | (x >> (32 - n))) & MASK32
 
-
 def _L1(x: int) -> int:
-    """线性变换 L (用于轮函数)"""
     return x ^ _rotate_left(x, 2) ^ _rotate_left(x, 10) ^ _rotate_left(x, 18) ^ _rotate_left(x, 24)
 
-
 def _L2(x: int) -> int:
-    """线性变换 L' (用于密钥扩展)"""
     return x ^ _rotate_left(x, 13) ^ _rotate_left(x, 23)
 
-
 def _sbox(x: int) -> int:
-    """S盒替换: 输入 32位, 4 字节分别查 S盒"""
     b0 = (x >> 24) & 0xFF
     b1 = (x >> 16) & 0xFF
     b2 = (x >> 8) & 0xFF
@@ -77,24 +62,16 @@ def _sbox(x: int) -> int:
            (SBOX[b2 >> 4][b2 & 0x0F] << 8) | \
            SBOX[b3 >> 4][b3 & 0x0F]
 
-
 def _tau(x: int) -> int:
-    """τ 变换 (非线性层, 即 S盒)"""
     return _sbox(x)
 
-
 def _T(x: int) -> int:
-    """合成置换 T = L(τ(x))"""
     return _L1(_tau(x))
 
-
 def _T_prime(x: int) -> int:
-    """合成置换 T' = L'(τ(x)) 用于密钥扩展"""
     return _L2(_tau(x))
 
-
 def key_expansion(key_bytes: bytes) -> list:
-    """SM4 密钥扩展, 返回 32 个 32位轮密钥"""
     assert len(key_bytes) == 16, "密钥必须 16 字节"
     K = list(struct.unpack('>4I', key_bytes))
     K[0] ^= FK[0]
@@ -110,9 +87,7 @@ def key_expansion(key_bytes: bytes) -> list:
         K = [K[1], K[2], K[3], new_k]
     return rk
 
-
 def sm4_encrypt_block(block_bytes: bytes, rk: list) -> bytes:
-    """单块 SM4 加密. 输入 16 字节, 输出 16 字节"""
     assert len(block_bytes) == 16
     X = list(struct.unpack('>4I', block_bytes))
     for i in range(32):
@@ -122,9 +97,7 @@ def sm4_encrypt_block(block_bytes: bytes, rk: list) -> bytes:
     # 反序输出
     return struct.pack('>4I', X[3], X[2], X[1], X[0])
 
-
 def sm4_decrypt_block(block_bytes: bytes, rk: list) -> bytes:
-    """单块 SM4 解密. 轮密钥反序使用"""
     assert len(block_bytes) == 16
     X = list(struct.unpack('>4I', block_bytes))
     for i in range(32):
@@ -133,24 +106,16 @@ def sm4_decrypt_block(block_bytes: bytes, rk: list) -> bytes:
         X = [X[1], X[2], X[3], new_x]
     return struct.pack('>4I', X[3], X[2], X[1], X[0])
 
-
 def _bytes_xor(a: bytes, b: bytes) -> bytes:
     return bytes(x ^ y for x, y in zip(a, b))
 
-
 def sm4_cbc_cts_encrypt(plaintext: bytes, key: bytes, iv: bytes) -> bytes:
-    """
-    SM4-CBC-CTS 加密
-    - CBC 密文链接模式
-    - CTS 密文挪用: 明文长度不需要是 16 的倍数, 密文长度 = 明文长度
-    """
     rk = key_expansion(key)
     n = len(plaintext)
     block_size = 16
     full_blocks = n // block_size
     remainder = n % block_size
 
-    # 情况 1: 刚好是块对齐, 普通 CBC
     if remainder == 0:
         ciphertext = bytearray()
         prev = iv
@@ -161,34 +126,25 @@ def sm4_cbc_cts_encrypt(plaintext: bytes, key: bytes, iv: bytes) -> bytes:
             prev = enc
         return bytes(ciphertext)
 
-    # 情况 2: 数据小于一个块, 补零加密 (CTS short-block)
     if full_blocks == 0:
         padded = plaintext + b'\x00' * (block_size - remainder)
         return sm4_encrypt_block(_bytes_xor(padded, iv), rk)
 
-    # 情况 3: 有完整块和余数 (标准 CTS)
     ciphertext = bytearray()
     prev = iv
-    # 除了最后两个块, 其他正常 CBC 加密
     for i in range(full_blocks - 1):
         block = plaintext[i * block_size:(i + 1) * block_size]
         enc = sm4_encrypt_block(_bytes_xor(block, prev), rk)
         ciphertext.extend(enc)
         prev = enc
 
-    # 倒数第二块明文
     second_last = plaintext[(full_blocks - 1) * block_size:full_blocks * block_size]
-    # 加密后得到 C_{n-1}
     C_prev = sm4_encrypt_block(_bytes_xor(second_last, prev), rk)
 
-    # 最后一块: 把剩余数据 (remainder 字节) 和 C_{n-1} 的后半部分拼接
-    tail_raw = plaintext[full_blocks * block_size:]  # remainder 字节
-    # 构造 M_n: tail_raw || C_prev[remainder:]  (即 tail | C_{n-1} 高 remainder 字节)
+    tail_raw = plaintext[full_blocks * block_size:] 
     padded_last = tail_raw + C_prev[remainder:]
-    # 加密 M_n 得到最后一个完整块, 放到密文倒数第二块位置
     C_last = sm4_encrypt_block(_bytes_xor(padded_last, prev), rk)
 
-    # 密文最后: 先放 C_last (完整块), 再放 C_prev 的前 remainder 字节
     ciphertext.extend(C_last)
     ciphertext.extend(C_prev[:remainder])
 
@@ -197,17 +153,11 @@ def sm4_cbc_cts_encrypt(plaintext: bytes, key: bytes, iv: bytes) -> bytes:
 
 def sm4_cbc_cts_decrypt(ciphertext: bytes, key: bytes, iv: bytes,
                           plaintext_len: int) -> bytes:
-    """
-    SM4-CBC-CTS 解密
-    plaintext_len: 原始明文长度 (用于恢复非对齐尾部)
-    """
     rk = key_expansion(key)
     block_size = 16
     n = plaintext_len
     full_blocks = n // block_size
     remainder = n % block_size
-
-    # 块对齐: 普通 CBC 解密
     if remainder == 0:
         plaintext = bytearray()
         prev = iv
@@ -218,38 +168,26 @@ def sm4_cbc_cts_decrypt(ciphertext: bytes, key: bytes, iv: bytes,
             prev = block
         return bytes(plaintext)[:n]
 
-    # short-block: 明文 < 16 字节
     if full_blocks == 0:
         dec = sm4_decrypt_block(ciphertext[:block_size], rk)
         return _bytes_xor(dec, iv)[:n]
 
-    # 标准 CTS 解密
     plaintext = bytearray()
     prev = iv
 
-    # 前面 full_blocks-1 个块正常解密 (注意: 密文倒数第二块位置存的是 C_last)
     for i in range(full_blocks - 1):
         block = ciphertext[i * block_size:(i + 1) * block_size]
         dec = _bytes_xor(sm4_decrypt_block(block, rk), prev)
         plaintext.extend(dec)
         prev = block
 
-    # 密文倒数第二个块 (即最后一个完整密文块): 这个是 E_K(M_n) 即 C_last
     C_last_block = ciphertext[(full_blocks - 1) * block_size:full_blocks * block_size]
-    # 密文最后 remainder 字节: 这是 C_prev 的前 remainder 字节
     C_prev_tail = ciphertext[full_blocks * block_size:
                                full_blocks * block_size + remainder]
-
-    # 解密 C_last_block 得到 M_n = P_n(remainder 字节) || C_prev[remainder:]
     M_n_decrypted = sm4_decrypt_block(C_last_block, rk)
-    # M_n = D_n = prev (prev 即 C_{n-2})
     M_n = _bytes_xor(M_n_decrypted, prev)
-    # M_n 的前 remainder 字节是最后一块明文 P_n
     P_n = M_n[:remainder]
-    # M_n 后 (16-remainder) 字节是 C_prev 的后 (16-remainder) 字节
-    # 恢复完整的 C_prev = C_prev_tail + M_n[remainder:]
     C_prev_full = C_prev_tail + M_n[remainder:]
-    # 解密 C_prev_full 得到倒数第二块明文
     P_prev = _bytes_xor(sm4_decrypt_block(C_prev_full, rk), prev)
 
     plaintext.extend(P_prev)

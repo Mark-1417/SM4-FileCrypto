@@ -1,14 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-SM4 命令行工具
-用法:
-    python main.py enc <input> [key]       加密
-    python main.py dec <input.sm4> [key]   解密
-    python main.py test                     算法自测
-    python main.py gui                      启动图形界面
-无参数: 启动图形界面
-"""
-
 import sys
 import os
 
@@ -31,7 +21,6 @@ def _print_stats(title: str, stats: dict):
 
 
 def _run_self_test():
-    """算法自测: 验证单块加解密回环 + CBC-CTS 非对齐数据"""
     from sm4_engine import sm4_encrypt_block, sm4_decrypt_block, \
                               sm4_cbc_cts_encrypt, sm4_cbc_cts_decrypt, \
                               key_expansion
